@@ -12,6 +12,7 @@
 import torch
 from scene import Scene
 import os
+import numpy as np
 from tqdm import tqdm
 from os import makedirs
 from gaussian_renderer import render
@@ -21,7 +22,8 @@ from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import GaussianModel
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
+def render_set(model_path, name, iteration, views, 
+               gaussians:GaussianModel, pipeline, background):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
 
@@ -34,7 +36,30 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
+def render_deform(model_path, name, iteration, views, gaussians:GaussianModel, pipeline, 
+                  background, deform_path:str, views_stride=100):
+    
+    tsr_params = {'dtype': gaussians._xyz.dtype, 'device': gaussians._xyz.device}
+
+    deform_fn_lst = [f for f in os.listdir(deform_path) if f.startswith("step_")]
+    deform_fn_lst.sort()
+
+    for idx, view in enumerate(views[::views_stride]):
+
+        render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"view_{idx:03d}")
+        makedirs(render_path, exist_ok=True)
+
+        for i, deform_fn in enumerate(deform_fn_lst):
+            
+            deform_pts = np.load(os.path.join(deform_path, deform_fn))
+            deform_pts = torch.tensor(deform_pts, **tsr_params)
+
+            gaussians._xyz = deform_pts
+            rendering = render(view, gaussians, pipeline, background)["render"]
+            torchvision.utils.save_image(rendering, os.path.join(render_path, f'{i:05d}.png'))
+
+def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, 
+                skip_train : bool, skip_test : bool, deform_path : str = None):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
@@ -47,6 +72,10 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
         if not skip_test:
              render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+        
+        if deform_path is not None:
+            render_deform(dataset.model_path, "deform", scene.loaded_iter, scene.getTrainCameras(), 
+                          gaussians, pipeline, background, deform_path=deform_path)
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -57,10 +86,11 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--deform_path", default=None, type=str)
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test)
+    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, args.deform_path)
