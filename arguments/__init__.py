@@ -109,4 +109,8 @@ def get_combined_args(parser : ArgumentParser):
     for k,v in vars(args_cmdline).items():
         if v != None:
             merged_dict[k] = v
+
+    if 'deform_path' not in merged_dict.keys():
+        merged_dict['deform_path'] = None        
+
     return Namespace(**merged_dict)
