@@ -43,8 +43,9 @@ def render_deform(model_path, name, iteration, views, gaussians:GaussianModel, p
 
     deform_fn_lst = [f for f in os.listdir(deform_path) if f.startswith("step_")]
     deform_fn_lst.sort()
+    print('Found {} deformations'.format(len(deform_fn_lst)))
 
-    for idx, view in enumerate(views[::views_stride]):
+    for idx, view in enumerate(views[::-views_stride]):
 
         render_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"view_{idx:03d}")
         makedirs(render_path, exist_ok=True)
@@ -75,7 +76,7 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         
         if deform_path is not None:
             render_deform(dataset.model_path, "deform", scene.loaded_iter, scene.getTrainCameras(), 
-                          gaussians, pipeline, background, deform_path=deform_path)
+                          gaussians, pipeline, background, deform_path=deform_path, views_stride=50)
 
 if __name__ == "__main__":
     # Set up command line argument parser
